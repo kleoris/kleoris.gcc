@@ -38,7 +38,7 @@ jobs:
         id: resolve
         run: |
           ALL='[
-            {"name":"macos-gcc-16","os":"macos-latest-xlarge"},
+            {"name":"macos-gcc-16","os":"macos-26"},
             {"name":"linux-gcc-16","os":"ubuntu-latest"},
             {"name":"win-gcc-16",  "os":"win-x64"}
           ]'
