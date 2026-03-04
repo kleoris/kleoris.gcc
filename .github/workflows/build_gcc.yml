@@ -25,22 +25,40 @@ on:
         default: 'master'
 
 jobs:
+  # ── Prepare: create dynamic matrix for target platforms ────────────────
+  # instead of the standard static matrix, a JSON file is generated
+  # based on the input and passed to the main job, and then used as 
+  # a dynamic matrix
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Resolve target matrix
+        id: resolve
+        run: |
+          ALL='[
+            {"name":"macos-gcc-16","os":"macos-latest-xlarge"},
+            {"name":"linux-gcc-16","os":"ubuntu-latest"},
+            {"name":"win-gcc-16",  "os":"win-x64"}
+          ]'
+          PLATFORM="${{ inputs.platform }}"
+          if [[ "$PLATFORM" == "all" || -z "$PLATFORM" ]]; then
+            MATRIX="$ALL"
+          else
+            MATRIX=$(echo "$ALL" | jq --arg p "$PLATFORM" '[.[] | select(.name == $p)]')
+          fi
+          echo "matrix=$(echo "$MATRIX" | jq -c .)" >> "$GITHUB_OUTPUT"
+
+  # ── Main build job ─────────────────────────────────────────────────────
   main:
-    # NOTE: uses matrix.runtime.os, not matrix.os
-    # Skip this matrix entry when a specific platform was requested and it doesn't match.
-    if: inputs.platform == 'all' || inputs.platform == matrix.runtime.name
+    needs: prepare
     runs-on: ${{ matrix.runtime.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        runtime:
-          - name: win-gcc-16
-            os: win-x64
-          - name: linux-gcc-16
-            os: ubuntu-latest
-          - name: macos-gcc-16
-            os: macos-latest-xlarge
+        runtime: ${{ fromJSON(needs.prepare.outputs.matrix) }}
 
     steps:
       # ── Source checkout ────────────────────────────────────────────────
