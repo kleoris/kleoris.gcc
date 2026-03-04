@@ -1,0 +1,198 @@
+name: Build GCC 16 with P2996 support
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      gcc_ref_default:
+        description: 'Branch/tag for Linux & Windows (gcc-mirror/gcc)'
+        required: false
+        default: 'master'
+      gcc_ref_macos:
+        description: 'Branch/tag for macOS (iains/gcc-darwin-arm64)'
+        required: false
+        default: 'master'
+
+jobs:
+  main:
+    # NOTE: uses matrix.runtime.os, not matrix.os
+    runs-on: ${{ matrix.runtime.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - name: win-gcc-16
+            os: win-x64
+          - name: linux-gcc-16
+            os: ubuntu-latest
+          - name: macos-gcc-16
+            os: macos-latest-xlarge
+
+    steps:
+      # ── Source checkout ────────────────────────────────────────────────
+      - name: Checkout GCC source (macOS — iains/gcc-darwin-arm64)
+        if: runner.os == 'macOS'
+        uses: actions/checkout@v4
+        with:
+          repository: iains/gcc-darwin-arm64
+          ref: ${{ inputs.gcc_ref_macos || 'master' }}
+          path: gcc-src
+
+      - name: Checkout GCC source (Linux / Windows — gcc-mirror/gcc)
+        if: runner.os != 'macOS'
+        uses: actions/checkout@v4
+        with:
+          repository: gcc-mirror/gcc
+          ref: ${{ inputs.gcc_ref_default || 'master' }}
+          path: gcc-src
+
+      # ── Dependencies ───────────────────────────────────────────────────
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install gmp mpfr libmpc isl
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libgmp-dev libmpfr-dev libmpc-dev libisl-dev \
+            flex bison texinfo build-essential
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            mingw-w64-x86_64-gcc \
+            mingw-w64-x86_64-gmp \
+            mingw-w64-x86_64-mpfr \
+            mingw-w64-x86_64-mpc \
+            mingw-w64-x86_64-isl \
+            make flex bison texinfo
+
+      # ── Define install prefix per platform ─────────────────────────────
+      - name: Set install prefix
+        id: prefix
+        shell: bash
+        run: |
+          if   [[ "$RUNNER_OS" == "macOS"   ]]; then echo "value=/opt/homebrew/gcc-16" >> "$GITHUB_OUTPUT"
+          elif [[ "$RUNNER_OS" == "Linux"   ]]; then echo "value=/usr/local/gcc-16"    >> "$GITHUB_OUTPUT"
+          else                                       echo "value=C:/Dev/gcc-16"        >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Configure ─────────────────────────────────────────────────────
+      - name: Configure GCC (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p gcc-build && cd gcc-build
+          ../gcc-src/configure \
+            --prefix="${{ steps.prefix.outputs.value }}" \
+            --program-suffix=-16 \
+            --build=aarch64-apple-darwin24 \
+            --host=aarch64-apple-darwin24 \
+            --target=aarch64-apple-darwin24 \
+            --enable-languages=c,c++ \
+            --disable-multilib \
+            --disable-bootstrap \
+            --with-sysroot="$(xcrun --show-sdk-path)" \
+            --with-gmp="$(brew --prefix gmp)" \
+            --with-mpfr="$(brew --prefix mpfr)" \
+            --with-mpc="$(brew --prefix libmpc)" \
+            --with-isl="$(brew --prefix isl)"
+
+      - name: Configure GCC (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p gcc-build && cd gcc-build
+          ../gcc-src/configure \
+            --prefix="${{ steps.prefix.outputs.value }}" \
+            --program-suffix=-16 \
+            --enable-languages=c,c++ \
+            --disable-multilib \
+            --disable-bootstrap
+
+      - name: Configure GCC (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          mkdir -p gcc-build && cd gcc-build
+          ../gcc-src/configure \
+            --prefix="${{ steps.prefix.outputs.value }}" \
+            --program-suffix=-16 \
+            --enable-languages=c,c++ \
+            --disable-multilib \
+            --disable-bootstrap
+
+      # ── Build ──────────────────────────────────────────────────────────
+      - name: Build GCC (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          cd gcc-build
+          JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+          make -j"${JOBS}" 2>&1 | tee ../build.log
+
+      - name: Build GCC (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          cd gcc-build
+          make -j"$(nproc)" 2>&1 | tee ../build.log
+
+      # ── Install ────────────────────────────────────────────────────────
+      - name: Install GCC (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          cd gcc-build && sudo make install
+
+      - name: Install GCC (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          cd gcc-build && make install
+
+      # ── Smoke test ─────────────────────────────────────────────────────
+      - name: Smoke-test installed compiler (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          PREFIX="${{ steps.prefix.outputs.value }}"
+          "${PREFIX}/bin/gcc-16"   --version
+          "${PREFIX}/bin/g++-16"   --version
+          echo 'int main(){}' | "${PREFIX}/bin/g++-16" -std=c++26 -freflection -x c++ - -o /dev/null \
+            && echo "✓ -freflection accepted" \
+            || echo "⚠ -freflection not supported by this build"
+
+      - name: Smoke-test installed compiler (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          PREFIX="${{ steps.prefix.outputs.value }}"
+          "${PREFIX}/bin/gcc-16"   --version
+          "${PREFIX}/bin/g++-16"   --version
+
+      # ── Package & upload ───────────────────────────────────────────────
+      - name: Package GCC (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          PREFIX="${{ steps.prefix.outputs.value }}"
+          tar -cJf gcc-16-${{ matrix.runtime.name }}.tar.xz \
+            -C "$(dirname "${PREFIX}")" "$(basename "${PREFIX}")"
+
+      - name: Package GCC (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          PREFIX="${{ steps.prefix.outputs.value }}"
+          tar -cJf gcc-16-${{ matrix.runtime.name }}.tar.xz \
+            -C "$(dirname "${PREFIX}")" "$(basename "${PREFIX}")"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcc-16-${{ matrix.runtime.name }}
+          path: gcc-16-${{ matrix.runtime.name }}.tar.xz
+          retention-days: 30
