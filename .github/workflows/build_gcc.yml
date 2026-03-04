@@ -22,7 +22,7 @@ on:
       gcc_ref_macos:
         description: 'Branch/tag for macOS (iains/gcc-darwin-arm64)'
         required: false
-        default: 'master'
+        default: 'master-wip-apple-si'
 
 jobs:
   # ── Prepare: create dynamic matrix for target platforms ────────────────
@@ -129,6 +129,7 @@ jobs:
             --enable-languages=c,c++ \
             --disable-multilib \
             --disable-bootstrap \
+            --disable-fixincludes \
             --with-sysroot="$(xcrun --show-sdk-path)" \
             --with-gmp="$(brew --prefix gmp)" \
             --with-mpfr="$(brew --prefix mpfr)" \
@@ -144,7 +145,8 @@ jobs:
             --program-suffix=-16 \
             --enable-languages=c,c++ \
             --disable-multilib \
-            --disable-bootstrap
+            --disable-bootstrap \
+            --disable-fixincludes
 
       - name: Configure GCC (Windows)
         if: runner.os == 'Windows'
@@ -156,7 +158,8 @@ jobs:
             --program-suffix=-16 \
             --enable-languages=c,c++ \
             --disable-multilib \
-            --disable-bootstrap
+            --disable-bootstrap \
+            --disable-fixincludes
 
       # ── Build ──────────────────────────────────────────────────────────
       - name: Build GCC (macOS / Linux)
