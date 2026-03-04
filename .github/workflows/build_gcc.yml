@@ -5,6 +5,16 @@ permissions: {}
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: 'Target platform to build (or "all"  to build every matrix entry)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - macos-gcc-16
+          - linux-gcc-16
+          - win-gcc-16
       gcc_ref_default:
         description: 'Branch/tag for Linux & Windows (gcc-mirror/gcc)'
         required: false
@@ -17,6 +27,8 @@ on:
 jobs:
   main:
     # NOTE: uses matrix.runtime.os, not matrix.os
+    # Skip this matrix entry when a specific platform was requested and it doesn't match.
+    if: inputs.platform == 'all' || inputs.platform == matrix.runtime.name
     runs-on: ${{ matrix.runtime.os }}
 
     strategy:
