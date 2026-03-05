@@ -1,6 +1,14 @@
+#
+# Original project: Kleoris - A modern Javascript/react runtime for desktop app.
+# by Laurent Mihalkovic 
+#
+# -------------------------------------------------------------------------
+# Copyright (c) 2025-present, Laurent Mihalkovic. All rights reserved.
+
 name: Build GCC 16 with P2996 support
 
-permissions: {}
+permissions:
+  contents: write
 
 on:
   workflow_dispatch:
@@ -23,6 +31,10 @@ on:
         description: 'Branch/tag for macOS (iains/gcc-darwin-arm64)'
         required: false
         default: 'master-wip-apple-si'
+      release_tag:
+        description: 'Git tag to create a GitHub release (e.g. v16.0.0-p2996-1). Leave blank to skip release creation.'
+        required: false
+        default: ''
 
 jobs:
   # ── Prepare: create dynamic matrix for target platforms ────────────────
@@ -229,3 +241,30 @@ jobs:
           name: gcc-16-${{ matrix.runtime.name }}
           path: gcc-16-${{ matrix.runtime.name }}.tar.xz
           retention-days: 30
+
+  # ── Release: collect all platform artifacts and publish a release ──----
+  release:
+    if: ${{ inputs.release_tag != '' }}
+    needs: main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: GCC 16 + P2996 — ${{ inputs.release_tag }}
+          draft: false
+          prerelease: true
+          body: |
+            GCC 16 with P2996 static-reflection support.
+
+            Sources used:
+            - macOS (iains/gcc-darwin-arm64 @ `${{ inputs.gcc_ref_macos }}`)
+            - Linux / Windows (gcc-mirror/gcc @ `${{ inputs.gcc_ref_default }}`)
+          files: dist/*.tar.xz
