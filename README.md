@@ -64,3 +64,12 @@ The macOS build uses the unofficial [iains/gcc-darwin-arm64](https://github.com/
 ## Build notes
 
 * `--disable-fixincludes` : the flag prevents GCC from patching the includes for the build of `libiberty.a`. we do that because the build is transient and immediately repackaged for distribution
+
+# Using the compiler
+
+## macOS
+
+```shell
+sudo tar -xJf gcc-16-macos-gcc-16.tar.xz -C /opt/homebrew
+/opt/homebrew/gcc-16/bin/clang --version
+```
